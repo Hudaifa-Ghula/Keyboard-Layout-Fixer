@@ -1,0 +1,9 @@
+# User settings
+settings.ini
+
+# Binaries (Upload these to GitHub Releases, don't commit them)
+*.exe
+
+# AutoHotKey specific
+*.upx
+*.bin
