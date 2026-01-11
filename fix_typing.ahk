@@ -13,15 +13,22 @@ TraySetIcon("shell32.dll", 45)
 A_IconTip := "Fix Typing (F1)`nDouble-click to open Settings"
 
 ; Default Mappings (Arabic 101 / Libya)
-; Renamed variables to avoid "Default" keyword just in case
+; FIXED: Using the single char ligature "ﻻ" for the 'b' key preventing index shift
+; The 'b' key is distinct from 'g' (ل) and 'h' (ا).
 DefEn := '``-=qwertyuiop[]asdfghjkl;`'zxcvbnm,./~!@#$%^&*()_+QWERTYUIOP{}ASDFGHJKL:"ZXCVBNM<>?'
 DefAr := "ذ-=ضصثقفغعهخحجدشسيبلاتنمكطئءؤرلاىةوزظ/ّ!@#$%^&*()_+ًٌَُلإإ‘÷×؛<>ٍ][لآأـ،/؟"
 
-; Load Settings
+; We must patch DefAr to ensure 'b' position is a single char. 
+; The sequence "لا" in the string above might be 2 chars.
+; We replace the bottom row segment manually to be safe.
+; Segment: "ئءؤرلاىةوزظ" -> "ئءؤر" . "ﻻ" . "ىةوزظ"
+DefAr := StrReplace(DefAr, "رلاى", "ر" . Chr(0xFEFB) . "ى")
+
+; Load Settings (Using MappingsV2 to force reset from buggy V1)
 IniFile := A_ScriptDir "\settings.ini"
 Mode := IniRead(IniFile, "Settings", "Mode", "Standard") ; Standard or Custom
-EnMapStr := IniRead(IniFile, "Mappings", "En", DefEn)
-ArMapStr := IniRead(IniFile, "Mappings", "Ar", DefAr)
+EnMapStr := IniRead(IniFile, "MappingsV2", "En", DefEn)
+ArMapStr := IniRead(IniFile, "MappingsV2", "Ar", DefAr)
 
 ; Global Maps
 EnToAr := Map()
@@ -62,7 +69,6 @@ F1::
     NewText := ""
     
     ; Detection Logic
-    ; Renamed to DetectedArabic to avoid 'Is' keyword confusion
     DetectedArabic := false
     Loop Parse, Text {
         if (Ord(A_LoopField) > 1000) 
@@ -74,11 +80,12 @@ F1::
     
     ; Conversion
     if (Mode == "Standard") {
-        ; STANDARD MODE (Has special logic for 'لا')
+        ; STANDARD MODE
         if (DetectedArabic) {
             ; AR -> EN
-            ; Pre-process double-char "لا" -> "b"
-            Text := StrReplace(Text, "لا", "b", , , 1)
+            ; Handle both 2-char sequence and ligature for 'b'
+            Text := StrReplace(Text, "لا", "b", , , 1)        ; lam + alif
+            Text := StrReplace(Text, Chr(0xFEFB), "b", , , 1) ; ligature
             
             Loop Parse, Text {
                 Char := A_LoopField
@@ -98,9 +105,8 @@ F1::
             }
         }
     } else {
-        ; CUSTOM MODE (Strict 1-to-1 Mapping)
+        ; CUSTOM MODE
         if (DetectedArabic) { 
-            ; In custom mode, just check if char exists in map
             Loop Parse, Text {
                 Char := A_LoopField
                 if ArToEn.Has(Char) 
@@ -130,8 +136,6 @@ F1::
     Send "{Alt down}{Shift}{Alt up}"
 }
 
-+F1::ShowSettings()
-
 ; ==============================================================================
 ; FUNCTIONS & GUI
 ; ==============================================================================
@@ -152,10 +156,6 @@ RebuildMaps(pMode, enStr, arStr) {
             ArToEn[cAr] := cEn
         }
         
-        ; Force Special Cases
-        EnToAr["b"] := "لا"
-        ArToEn["لا"] := "b"
-        
     } else {
         ; CUSTOM MODE
         Len := Min(StrLen(enStr), StrLen(arStr))
@@ -174,7 +174,7 @@ ShowSettings(*) {
     
     MyGui.Add("Text", "w400 center", "--- Calibration Mode ---")
     
-    ; Determine initial check states safer
+    ; Determine initial check states
     CheckStd := (Mode == "Standard") ? 1 : 0
     CheckCst := (Mode == "Custom") ? 1 : 0
     
@@ -187,7 +187,6 @@ ShowSettings(*) {
     
     MyGui.Add("Text", "xm y+20", "English/Source:")
     
-    ; Calculate ReadOnly Option
     RoOpt := (Mode == "Standard") ? "ReadOnly" : ""
     EditEn := MyGui.Add("Edit", "r3 w400 vEnStr " RoOpt, EnMapStr)
     
@@ -215,17 +214,14 @@ ShowSettings(*) {
     SaveSettings(*) {
         SavedGui := MyGui.Submit()
         
-        ; Radios in a group share the variable name of the first one
-        ; But submitting returns the value (1, 2, etc) OR the boolean if independent.
-        ; Here checking the first radio's value is safest.
-        
         gMode := (SavedGui.RadMode == 1) ? "Standard" : "Custom"
         gEn := SavedGui.EnStr
         gAr := SavedGui.ArStr
         
         IniWrite(gMode, IniFile, "Settings", "Mode")
-        IniWrite(gEn, IniFile, "Mappings", "En")
-        IniWrite(gAr, IniFile, "Mappings", "Ar")
+        ; Save to V2 section
+        IniWrite(gEn, IniFile, "MappingsV2", "En")
+        IniWrite(gAr, IniFile, "MappingsV2", "Ar")
         
         ; Update Global
         global Mode := gMode
