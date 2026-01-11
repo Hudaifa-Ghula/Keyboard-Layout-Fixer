@@ -5,7 +5,7 @@ It comes out like: `Hgsghl ugd;l` instead of `السلام عليكم`.
 
 **Keyboard Layout Fixer** solves this with one button.
 
-![Icon](https://github.com/user-attachments/assets/placeholder-icon.png)
+![Icon](icon.ico)
 
 ## 🚀 Features
 
