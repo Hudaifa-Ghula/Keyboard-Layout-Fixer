@@ -39,7 +39,7 @@ It comes out like: `Hgsghl ugd;l` instead of `السلام عليكم`.
 
 ## 🛠️ Built With
 *   **Language**: AutoHotKey v2.0
-*   **License**: MIT
+*   **License**: Free, support is appreciated. 
 
 ## 📝 Author
 **App Per Week Challenge** - Week 1
