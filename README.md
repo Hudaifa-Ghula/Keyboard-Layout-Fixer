@@ -11,7 +11,6 @@ It comes out like: `Hgsghl ugd;l` instead of `السلام عليكم`.
 
 *   **Instant Fix**: Select the gibberish text and press **F1**. It converts it to the correct language instantly.
 *   **Auto-Switch**: Automatically flips your Windows keyboard language so you can keep typing correctly.
-*   **Smart Detection**: Automatically detects if the text is "English Gibberish" or "Arabic Gibberish".
 *   **Standard Arabic 101 Support**: Handles the tricky characters (like `b` ↔ `لا`) perfectly.
 *   **Custom Mode**: Supports ANY two languages (Russian, French, Dvorak, etc.) via the Settings menu.
 
