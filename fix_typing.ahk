@@ -13,22 +13,27 @@ TraySetIcon("shell32.dll", 45)
 A_IconTip := "Fix Typing (F1)`nDouble-click to open Settings"
 
 ; Default Mappings (Arabic 101 / Libya)
-; FIXED: Using the single char ligature "ﻻ" for the 'b' key preventing index shift
-; The 'b' key is distinct from 'g' (ل) and 'h' (ا).
-DefEn := '``-=qwertyuiop[]asdfghjkl;`'zxcvbnm,./~!@#$%^&*()_+QWERTYUIOP{}ASDFGHJKL:"ZXCVBNM<>?'
-DefAr := "ذ-=ضصثقفغعهخحجدشسيبلاتنمكطئءؤرلاىةوزظ/ّ!@#$%^&*()_+ًٌَُلإإ‘÷×؛<>ٍ][لآأـ،/؟"
+; We define the strings with standard 2-char sequences first, then patch them.
+DefEn := '``-=qwertyuiop[]\asdfghjkl;`'zxcvbnm,./~!@#$%^&*()_+QWERTYUIOP{}|ASDFGHJKL:"ZXCVBNM<>?'
+DefAr := "ذ-=ضصثقفغعهخحجد\شسيبلاتنمكطئءؤرلاىةوزظّ!@#$%^&*()_+ًٌَُلإإ‘÷×؛<>|ٍ][لآأـ،/؟"
 
-; We must patch DefAr to ensure 'b' position is a single char. 
-; The sequence "لا" in the string above might be 2 chars.
-; We replace the bottom row segment manually to be safe.
-; Segment: "ئءؤرلاىةوزظ" -> "ئءؤر" . "ﻻ" . "ىةوزظ"
+; PATCH: Convert 2-char Lam-Alifs to Single Unicode Ligatures to preserve alignment
+; and prevent 'l' (Lam) from being overwritten by Uppercase mappings.
+
+; 1. 'b' -> 'لا' (Lam + Alif) => Ligature U+FEFB
 DefAr := StrReplace(DefAr, "رلاى", "ر" . Chr(0xFEFB) . "ى")
 
-; Load Settings (Using MappingsV2 to force reset from buggy V1)
+; 2. 'Shift+T' -> 'لإ' (Lam + Alif Hamza Below) => Ligature U+FEF9
+DefAr := StrReplace(DefAr, "لإ", Chr(0xFEF9))
+
+; 3. 'Shift+G' -> 'لآ' (Lam + Alif Madda) => Ligature U+FEF5
+DefAr := StrReplace(DefAr, "لآ", Chr(0xFEF5))
+
+; Load Settings (Using MappingsV5 to force reset)
 IniFile := A_ScriptDir "\settings.ini"
-Mode := IniRead(IniFile, "Settings", "Mode", "Standard") ; Standard or Custom
-EnMapStr := IniRead(IniFile, "MappingsV2", "En", DefEn)
-ArMapStr := IniRead(IniFile, "MappingsV2", "Ar", DefAr)
+Mode := IniRead(IniFile, "Settings", "Mode", "Standard")
+EnMapStr := IniRead(IniFile, "MappingsV5", "En", DefEn)
+ArMapStr := IniRead(IniFile, "MappingsV5", "Ar", DefAr)
 
 ; Global Maps
 EnToAr := Map()
@@ -47,6 +52,23 @@ ReloadApp(*) {
 }
 ExitAppFunc(*) {
     ExitApp()
+}
+
+; ==============================================================================
+; KEY INTERCEPTOR - Makes 'b' produce Ligature when Arabic is active
+; ==============================================================================
+#HotIf IsArabicActive()
+$b::Send(Chr(0xFEFB)) ; Output Ligature instead of Lam+Alif
+#HotIf
+
+IsArabicActive() {
+    ; Get current keyboard layout ID
+    ; Arabic layouts typically have IDs starting with 0x0401 (Arabic Saudi), 0x1401 (Arabic Libya), etc.
+    ThreadId := DllCall("GetWindowThreadProcessId", "Ptr", WinGetID("A"), "Ptr", 0)
+    LayoutId := DllCall("GetKeyboardLayout", "UInt", ThreadId, "Ptr")
+    LangId := LayoutId & 0xFFFF
+    ; Arabic language IDs are in the 0x01-0x3F range for primary language = Arabic (0x01)
+    return (LangId & 0x3F) == 0x01
 }
 
 ; ==============================================================================
@@ -83,9 +105,9 @@ F1::
         ; STANDARD MODE
         if (DetectedArabic) {
             ; AR -> EN
-            ; Handle both 2-char sequence and ligature for 'b'
-            Text := StrReplace(Text, "لا", "b", , , 1)        ; lam + alif
-            Text := StrReplace(Text, Chr(0xFEFB), "b", , , 1) ; ligature
+            ; Pre-process: Ligature -> 'b' (from intercepted 'b' key)
+            ; 2-char Lam+Alif (from 'gh') flows through normal mapping -> 'g' + 'h'
+            Text := StrReplace(Text, Chr(0xFEFB), "b", , , 1) ; Ligature -> b
             
             Loop Parse, Text {
                 Char := A_LoopField
@@ -103,6 +125,26 @@ F1::
                 else
                     NewText .= Char
             }
+            
+            ; Post-process: Convert 'gh' sequence (l + a) -> Ligature 
+            ; BUT user said "make sure if person typed b or gh to get to لا".
+            ; 'b' maps to Ligature (via EnToAr).
+            ; 'gh' maps to 'l' 'a'. 
+            ; The user output for 'gh' (Arabic) appears as 'لا' visually. 
+            ; If we force 'l'+'a' -> Ligature, it becomes 'b' when flipped back.
+            ; User asked to keep them separate? No, "make sure... to get to لا".
+            ; Wait, if they look same, they are same?
+            ; If I convert 'l'+'a' -> Ligature, then F1 will turn it to 'b'.
+            ; If I DON'T convert, F1 turns it to 'gh'.
+            ; Step 321 user said "not fixed" (meaning they don't want b?).
+            
+            ; Correct behavior:
+            ; Input 'gh' -> 'l' + 'a'. Visual: 'لا'.
+            ; Flip back -> 'g' + 'h'.
+            ; Input 'b' -> Ligature. Visual: 'لا'.
+            ; Flip back -> 'b'.
+            
+            ; So: We do NOT force merge 'l'+'a' to Ligature.
         }
     } else {
         ; CUSTOM MODE
@@ -158,6 +200,13 @@ RebuildMaps(pMode, enStr, arStr) {
             ArToEn[cAr] := cEn
         }
         
+        ; Force Symbols to map to themselves
+        SafeChars := "!@#$%^&*()_+"
+        Loop Parse, SafeChars {
+            EnToAr[A_LoopField] := A_LoopField
+            ArToEn[A_LoopField] := A_LoopField
+        }
+        
     } else {
         ; CUSTOM MODE
         Len := Min(StrLen(enStr), StrLen(arStr))
@@ -176,11 +225,9 @@ ShowSettings(*) {
     
     MyGui.Add("Text", "w400 center", "--- Calibration Mode ---")
     
-    ; Determine initial check states
     CheckStd := (Mode == "Standard") ? 1 : 0
     CheckCst := (Mode == "Custom") ? 1 : 0
     
-    ; Radio Buttons
     RadStandard := MyGui.Add("Radio", "x50 vRadMode Checked" CheckStd, "Standard (Arabic 101)")
     RadCustom := MyGui.Add("Radio", "x+20 Checked" CheckCst, "Custom Layout")
     
@@ -203,7 +250,6 @@ ShowSettings(*) {
             EditEn.Opt("-ReadOnly")
             EditAr.Opt("-ReadOnly")
         } else {
-            ; Reset text to default if switching to Standard
             EditEn.Value := DefEn
             EditAr.Value := DefAr
             EditEn.Opt("+ReadOnly")
@@ -215,17 +261,14 @@ ShowSettings(*) {
     
     SaveSettings(*) {
         SavedGui := MyGui.Submit()
-        
         gMode := (SavedGui.RadMode == 1) ? "Standard" : "Custom"
         gEn := SavedGui.EnStr
         gAr := SavedGui.ArStr
         
         IniWrite(gMode, IniFile, "Settings", "Mode")
-        ; Save to V2 section
-        IniWrite(gEn, IniFile, "MappingsV2", "En")
-        IniWrite(gAr, IniFile, "MappingsV2", "Ar")
+        IniWrite(gEn, IniFile, "MappingsV5", "En")
+        IniWrite(gAr, IniFile, "MappingsV5", "Ar")
         
-        ; Update Global
         global Mode := gMode
         global EnMapStr := gEn
         global ArMapStr := gAr
